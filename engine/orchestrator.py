@@ -10,10 +10,7 @@ class Orchestrator:
     def __init__(self, registry: ToolRegistry, llm: LLMService):
         self.registry = registry
         self.llm = llm
-        self.state = {} # Context memory: {"tool_name": {param: value}}
-        self.history = [] # Conversational memory: [{"role": "user", "content": "..."}, ...]
-        self.current_tool = None
-        self.waiting_for_confirmation = False
+        self.sessions = {} # Dictionary to store state/history per session_id
         
         # Load Settings
         import os
@@ -29,67 +26,81 @@ class Orchestrator:
                 "safety": {"confirm_unsafe_methods": True}
             }
 
-    def process_message(self, user_message: str) -> str:
+    def process_message(self, user_message: str, session_id: str = "default") -> str:
+        # 1. Load Session State
+        if session_id not in self.sessions:
+            self.sessions[session_id] = {
+                "history": [],
+                "state": {},
+                "current_tool": None,
+                "waiting_for_confirmation": False
+            }
+        
+        session = self.sessions[session_id]
+        logger.info(f"Processing message for Session ID: {session_id}")
         logger.info(f"User Message: {user_message}")
         
-        self.history.append({"role": "user", "content": user_message})
+        session["history"].append({"role": "user", "content": user_message})
 
         # 0. Handle Confirmation
-        if self.waiting_for_confirmation:
+        if session["waiting_for_confirmation"]:
             if "yes" in user_message.lower() or "confirm" in user_message.lower():
-                self.waiting_for_confirmation = False
-                result = self._execute_tool()
-                self.history.append({"role": "assistant", "content": result})
+                session["waiting_for_confirmation"] = False
+                result = self._execute_tool(session)
+                session["history"].append({"role": "assistant", "content": result})
                 return result
             else:
-                self.waiting_for_confirmation = False
-                self.current_tool = None
-                self.state = {}
+                session["waiting_for_confirmation"] = False
+                session["current_tool"] = None
+                session["state"] = {}
                 response = "Action cancelled."
-                self.history.append({"role": "assistant", "content": response})
+                session["history"].append({"role": "assistant", "content": response})
                 return response
         
         # 1. Identify Intent (if no active tool)
-        if not self.current_tool:
-            tool_name = self._identify_intent()
+        if not session["current_tool"]:
+            tool_name = self._identify_intent(session)
             if tool_name:
-                self.current_tool = self.registry.get_tool(tool_name)
-                self.state = {p: None for p in self.current_tool['parameters'].keys()}
+                session["current_tool"] = self.registry.get_tool(tool_name)
+                # Initialize slots for the tool
+                session["state"] = {p: None for p in session["current_tool"]['parameters'].keys()}
                 logger.info(f"Selected Tool: {tool_name}")
             else:
                 response = "I'm sorry, I didn't understand that request. I can help with updating nominees, filing claims, or checking policy details."
-                self.history.append({"role": "assistant", "content": response})
+                session["history"].append({"role": "assistant", "content": response})
                 return response
 
         # 2. Extract Slots
-        self._extract_slots()
+        self._extract_slots(session)
 
         # 3. Check for Missing Slots
-        missing = [p for p, v in self.state.items() 
-                   if v is None and self.current_tool['parameters'][p]['required']]
+        missing = [p for p, v in session["state"].items() 
+                   if v is None and session["current_tool"]['parameters'][p]['required']]
         
         if missing:
-            response = self._generate_response(missing)
-            self.history.append({"role": "assistant", "content": response})
+            response = self._generate_response(session, missing)
+            session["history"].append({"role": "assistant", "content": response})
             return response
         
         # 4. Check Safety (Confirmation) - Logic controlled by config
         if self.settings['safety'].get('confirm_unsafe_methods', True):
-            method = self.current_tool.get('method', 'POST')
-            if method in ['POST', 'PUT', 'DELETE']:
-                self.waiting_for_confirmation = True
-                summary = json.dumps({k: v for k, v in self.state.items() if v})
+            method = session["current_tool"].get('method', 'POST')
+            # Check config for unsafe methods list, default to POST/PUT/DELETE
+            unsafe = self.settings['safety'].get('unsafe_methods', ['POST', 'PUT', 'DELETE'])
+            if method in unsafe:
+                session["waiting_for_confirmation"] = True
+                summary = json.dumps({k: v for k, v in session["state"].items() if v})
                 response = f"I am about to execute a {method} request with: {summary}. Are you sure? (Yes/No)"
-                self.history.append({"role": "assistant", "content": response})
+                session["history"].append({"role": "assistant", "content": response})
                 return response
 
-        # 5. Execute (Safe GET or if checks passed)
-        result = self._execute_tool()
-        self.history.append({"role": "assistant", "content": result})
+        # 5. Execute (Safe calls or if passed checks)
+        result = self._execute_tool(session)
+        session["history"].append({"role": "assistant", "content": result})
         return result
 
-    def _generate_response(self, missing_slots: List[str]) -> str:
-        filled = {k: v for k, v in self.state.items() if v is not None}
+    def _generate_response(self, session, missing_slots: List[str]) -> str:
+        filled = {k: v for k, v in session["state"].items() if v is not None}
         
         # Smart Context: Inject Date
         from datetime import datetime
@@ -98,14 +109,14 @@ class Orchestrator:
         # Load Prompt Template
         template = self.settings['prompts'].get('response_system', "")
         system_content = template.format(
-            tool_name=self.current_tool['name'],
+            tool_name=session["current_tool"]['name'],
             current_date=current_date,
             filled_data=json.dumps(filled),
             missing_slots=json.dumps(missing_slots)
         )
         
         window = self.settings['history_window'].get('response_generation', 5)
-        messages = [{"role": "system", "content": system_content}] + self.history[-window:] # Configurable window
+        messages = [{"role": "system", "content": system_content}] + session["history"][-window:] 
         
         # Call LLM
         raw_response = self.llm.predict(messages)
@@ -120,7 +131,7 @@ class Orchestrator:
         
         return f"[THOUGHT] {thought}\n[RESPONSE] {final_response}"
 
-    def _identify_intent(self) -> str:
+    def _identify_intent(self, session) -> str:
         # Load Prompt Template
         template = self.settings['prompts'].get('intent_system', "")
         system_content = template.format(
@@ -128,7 +139,7 @@ class Orchestrator:
         )
         
         window = self.settings['history_window'].get('intent_recognition', 3)
-        messages = [{"role": "system", "content": system_content}] + self.history[-window:]
+        messages = [{"role": "system", "content": system_content}] + session["history"][-window:]
         
         response = self.llm.predict(messages)
         logger.info(f"Intent Raw Response: {response}")
@@ -144,7 +155,7 @@ class Orchestrator:
             logger.error(f"Failed to parse intent: {e}")
             return None
 
-    def _extract_slots(self):
+    def _extract_slots(self, session):
         # Smart Context: Inject Date for relative date resolution (e.g., "yesterday")
         from datetime import datetime
         current_date = datetime.now().strftime("%Y-%m-%d")
@@ -152,31 +163,31 @@ class Orchestrator:
         # Load Prompt Template
         template = self.settings['prompts'].get('extraction_system', "")
         system_content = template.format(
-            slots=list(self.state.keys()),
+            slots=list(session["state"].keys()),
             current_date=current_date
         )
         
         window = self.settings['history_window'].get('slot_extraction', 5)
-        messages = [{"role": "system", "content": system_content}] + self.history[-window:]
+        messages = [{"role": "system", "content": system_content}] + session["history"][-window:]
         
         response = self.llm.predict(messages)
         try:
             data = json.loads(response)
             for k, v in data.items():
-                if k in self.state and v:
-                    self.state[k] = v
+                if k in session["state"] and v:
+                    session["state"][k] = v
                     logger.info(f"Extracted {k}: {v}")
         except:
             pass
 
-    def _execute_tool(self) -> str:
-        tool_name = self.current_tool['name']
-        logger.info(f"Executing {tool_name} with {self.state}")
+    def _execute_tool(self, session) -> str:
+        tool_name = session["current_tool"]['name']
+        logger.info(f"Executing {tool_name} with {session['state']}")
         
         # Production Logic:
         # 1. Get endpoint and method from config
-        endpoint = self.current_tool.get('endpoint')
-        method = self.current_tool.get('method', 'POST')
+        endpoint = session["current_tool"].get('endpoint')
+        method = session["current_tool"].get('method', 'POST')
         
         # 2. Construct the Request
         # In a real app, you would use 'requests' here.
@@ -188,7 +199,7 @@ class Orchestrator:
         final_url = endpoint
         json_payload = {}
         
-        for key, value in self.state.items():
+        for key, value in session["state"].items():
             placeholder = "{" + key + "}"
             if placeholder in final_url:
                 final_url = final_url.replace(placeholder, str(value))
@@ -197,22 +208,19 @@ class Orchestrator:
 
         curl_command = f"curl -X {method} '{final_url}' -H 'Content-Type: application/json' -d '{json.dumps(json_payload)}'"
         
-        # In a real production system, this is the line:
-        # try:
-        #     if method == "GET":
-        #         resp = requests.get(final_url, params=json_payload)
-        #     else:
-        #         resp = requests.post(final_url, json=json_payload)
-        #     return f"API Success: {resp.json()}"
-        # except Exception as e:
-        #     return f"API Failure: {e}"
+        logger.info(f"Executing: {curl_command}")
+        
+        # Generic Mock Response (Defined in Config)
+        mock_response = None
+        if "mock_response" in session["current_tool"]:
+            mock_response = session["current_tool"]["mock_response"]
 
         # Reset state after execution
-        self.current_tool = None
-        self.state = {}
+        session["current_tool"] = None
+        session["state"] = {}
         
-        # MOCK RETURN DATA FOR CHAINING
-        if tool_name == "get_policy_details":
-            return "Execution Successful. API Response: {'status': 'success', 'policy_number': '555-999-000', 'holder': 'John Doe', 'coverage': 'full'}"
-        
+        if mock_response:
+            return mock_response
+            
+        # Default Simulation
         return f"Executing Production API Call:\n> {curl_command}\n\n(Simulated Success)"

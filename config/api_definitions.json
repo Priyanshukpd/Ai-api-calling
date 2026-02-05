@@ -28,12 +28,13 @@
     "endpoint": "https://api.insurance-co.com/v1/policy/{policy_number}",
     "method": "GET",
     "parameters": {
-      "policy_number": {
+      "user_name": {
         "type": "string",
         "required": true,
-        "description": "The unique 10-digit policy number."
+        "description": "The full name of the policy holder to search for."
       }
-    }
+    },
+    "mock_response": "Execution Successful. API Response: {'status': 'success', 'policy_number': '555-999-000', 'holder': 'John Doe', 'coverage': 'full'}"
   },
   {
     "name": "file_claim",
@@ -62,5 +63,89 @@
         "description": "Estimated claim amount."
       }
     }
+  },
+  {
+    "name": "submit_underwriting",
+    "description": "Submits a detailed underwriting application for a new life insurance policy.",
+    "endpoint": "https://api.insurance-co.com/v1/underwriting/submit",
+    "method": "POST",
+    "parameters": {
+      "applicant_name": {
+        "type": "string",
+        "required": true,
+        "description": "Full name of the applicant."
+      },
+      "age": {
+        "type": "integer",
+        "required": true,
+        "description": "Age of the applicant."
+      },
+      "annual_income": {
+        "type": "number",
+        "required": true,
+        "description": "Annual income in USD."
+      },
+      "smoking_status": {
+        "type": "string",
+        "required": true,
+        "description": "Smoker or Non-Smoker."
+      },
+      "coverage_amount": {
+        "type": "number",
+        "required": true,
+        "description": "Requested coverage amount."
+      },
+      "address": {
+        "type": "string",
+        "required": false,
+        "description": "Residential address."
+      },
+      "phone_number": {
+        "type": "string",
+        "required": false,
+        "description": "Contact phone number."
+      },
+      "email": {
+        "type": "string",
+        "required": false,
+        "description": "Email address."
+      },
+      "occupation": {
+        "type": "string",
+        "required": false,
+        "description": "Current job title."
+      },
+      "height_cm": {
+        "type": "integer",
+        "required": false,
+        "description": "Height in cm."
+      },
+      "weight_kg": {
+        "type": "integer",
+        "required": false,
+        "description": "Weight in kg."
+      },
+      "blood_pressure": {
+        "type": "string",
+        "required": false,
+        "description": "Last recorded BP (e.g. 120/80)."
+      },
+      "cholesterol_level": {
+        "type": "integer",
+        "required": false,
+        "description": "Total cholesterol level."
+      },
+      "family_history": {
+        "type": "string",
+        "required": false,
+        "description": "Any hereditary diseases."
+      },
+      "existing_conditions": {
+        "type": "string",
+        "required": false,
+        "description": "List of pre-existing medical conditions."
+      }
+    },
+    "mock_response": "{\"application_id\": \"APP-2024-8888\", \"status\": \"APPROVED\", \"risk_score\": 85, \"premium_analysis\": {\"base_premium\": 500, \"loading_age\": 50, \"loading_health\": 0, \"discount_nonsmoker\": -50, \"final_annual_premium\": 500}, \"medical_assessment\": {\"bmi_category\": \"Normal\", \"cardio_risk\": \"Low\", \"metabolic_risk\": \"Low\"}, \"policy_terms\": {\"term_years\": 20, \"maturity_date\": \"2046-02-06\", \"sum_assured\": 1000000}, \"compliance_checks\": {\"kyc_verified\": true, \"aml_cleared\": true, \"medical_cleared\": true}, \"next_steps\": [\"Sign e-proposal\", \"Pay first premium\"], \"agent_notes\": \"Standard processed via STP.\", \"validation_errors\": [], \"timestamp\": \"2026-02-06T10:00:00Z\"}"
   }
 ]
