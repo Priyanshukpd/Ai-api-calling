@@ -1,0 +1,66 @@
+[
+  {
+    "name": "update_nominee",
+    "description": "Updates the nominee details for a given insurance policy.",
+    "endpoint": "https://api.insurance-co.com/v1/policy/update-nominee",
+    "method": "POST",
+    "parameters": {
+      "policy_number": {
+        "type": "string",
+        "required": true,
+        "description": "The unique 10-digit policy number."
+      },
+      "nominee_name": {
+        "type": "string",
+        "required": true,
+        "description": "Full name of the new nominee."
+      },
+      "nominee_relation": {
+        "type": "string",
+        "required": true,
+        "description": "Relationship of the nominee with the policy holder (e.g., Spouse, Son, Father)."
+      }
+    }
+  },
+  {
+    "name": "get_policy_details",
+    "description": "Fetches the details of an insurance policy including coverage and expiry.",
+    "endpoint": "https://api.insurance-co.com/v1/policy/{policy_number}",
+    "method": "GET",
+    "parameters": {
+      "policy_number": {
+        "type": "string",
+        "required": true,
+        "description": "The unique 10-digit policy number."
+      }
+    }
+  },
+  {
+    "name": "file_claim",
+    "description": "Initiates a claim process for a hospitalization event.",
+    "endpoint": "https://api.insurance-co.com/v1/claims/file",
+    "method": "POST",
+    "parameters": {
+      "policy_number": {
+        "type": "string",
+        "required": true,
+        "description": "The unique 10-digit policy number."
+      },
+      "hospital_name": {
+        "type": "string",
+        "required": true,
+        "description": "Name of the hospital where treatment was taken."
+      },
+      "date_of_admission": {
+        "type": "string",
+        "required": true,
+        "description": "Date of admission in YYYY-MM-DD format."
+      },
+      "claim_amount": {
+        "type": "number",
+        "required": false,
+        "description": "Estimated claim amount."
+      }
+    }
+  }
+]
