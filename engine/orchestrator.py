@@ -211,4 +211,8 @@ class Orchestrator:
         self.current_tool = None
         self.state = {}
         
+        # MOCK RETURN DATA FOR CHAINING
+        if tool_name == "get_policy_details":
+            return "Execution Successful. API Response: {'status': 'success', 'policy_number': '555-999-000', 'holder': 'John Doe', 'coverage': 'full'}"
+        
         return f"Executing Production API Call:\n> {curl_command}\n\n(Simulated Success)"
