@@ -11,8 +11,9 @@ class LLMService(ABC):
 
 
 class OllamaLLM(LLMService):
-    def __init__(self, model: str = "gemma3:270m", base_url: str = "http://localhost:11434"):
+    def __init__(self, model: str = "gemma3:270m", embedding_model: str = "nomic-embed-text", base_url: str = "http://localhost:11434"):
         self.model = model
+        self.embedding_model = embedding_model
         self.base_url = base_url
         import requests 
         self.requests = requests
@@ -37,6 +38,22 @@ class OllamaLLM(LLMService):
             return result.get("response", "")
         except Exception as e:
             return f"Error calling Ollama: {str(e)}"
+
+    def get_embedding(self, text: str) -> List[float]:
+        """Generate embeddings using Ollama's nomic-embed-text model."""
+        url = f"{self.base_url}/api/embeddings"
+        payload = {
+            "model": self.embedding_model,
+            "prompt": text
+        }
+        try:
+            response = self.requests.post(url, json=payload, timeout=30)
+            response.raise_for_status()
+            result = response.json()
+            return result.get("embedding", [])
+        except Exception as e:
+            print(f"Embedding failed: {e}")
+            return []
 
 class TogetherLLM(LLMService):
     def __init__(self, api_key: str, model: str = "ServiceNow-AI/Apriel-1.6-15b-Thinker"):
